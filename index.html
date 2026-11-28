@@ -131,15 +131,19 @@
   .mealGrid img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;border-radius:10px}
   .mealGrid figcaption{font-size:12px;color:#5a7263;font-weight:700;margin:5px 2px 0}
   /* 弹窗卡片 (统一逻辑, per the owner): ONE behaviour on phone and
-     desktop alike — the card is NOT anchored to its 3D point any more.
-     It is a viewport-fixed card: horizontally centred, top clear of
-     the logo / 晴天·夜晚 bar, height capped so the whole card always
-     stays on screen, the title row stays put, the middle content
+     desktop alike — NO width-based fork anywhere. The card DOCKS TO
+     THE BOTTOM of the screen, perched just above the tab bar: near
+     full width on a phone, a comfortable centred 620px on a desktop,
+     both from the single width rule below. Height is capped at about
+     half the viewport, the title row stays put, the middle content
      scrolls inside the card, and the 关闭 capsule (absolute,
-     bottom-right of the card) never scrolls away. Only the 3D leader
-     line + ground ring still point at the selected POI. Desktop keeps
-     a slightly wider card (420px) than the phone's full-width one. */
-  #popup{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 88px);transform:translateX(-50%);z-index:12;background:#173d28;color:#fff;border-radius:14px;padding:12px 16px 62px;box-shadow:0 14px 34px rgba(10,40,22,.35);display:none;flex-direction:column;gap:5px;width:min(92vw,420px);max-width:420px;max-height:80vh;max-height:min(80dvh,calc(100dvh - 176px));transition:opacity .15s}
+     bottom-right of the card) never scrolls away. The card no longer
+     covers the middle of the 3D view: selecting a point flies the
+     camera so the point rests in the open area ABOVE the card,
+     wearing a 3D 名牌 with its full name, tied to the card by the
+     leader line + pulsing ground ring (see the script) — the visitor
+     always sees WHICH tent or activity the card describes. */
+  #popup{position:fixed;left:50%;bottom:calc(60px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:12;background:#173d28;color:#fff;border-radius:14px;padding:12px 16px 62px;box-shadow:0 14px 34px rgba(10,40,22,.35);display:none;flex-direction:column;gap:5px;width:min(94vw,620px);max-height:52vh;max-height:52dvh;transition:opacity .15s}
   #popup.show{display:flex}
   #popup .popHead{display:flex;align-items:center;gap:10px;flex:none}
   #popup .dot{width:10px;height:10px;border-radius:50%;background:#ffcf5c;flex:none}
@@ -159,19 +163,17 @@
      讲解 text, full card width, natural aspect ratio — NEVER cropped
      (no object-fit, no fixed height). Points without a photo keep the
      plain text popup; no placeholder is ever shown. */
-  #popup.hasPhoto{width:min(92vw,420px)}
+  /* (photo cards follow the same single #popup width rule as every
+     other card — no special case) */
   #popupImg{display:none;width:100%;height:auto;border-radius:10px}
   /* .popScroll wraps everything under the title row and is the card's
      inner scroll area on EVERY screen size (unified logic): when the
      card hits its max-height, the photo / 讲解 / 预订卡 scroll inside
      while the title row above and the 关闭 capsule below stay put. */
   .popScroll{display:flex;flex-direction:column;gap:5px;flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
-  /* 手机端只改卡片的横向占位: 左右各留 12px 边距撑满屏宽; 定位、限高、
-     内部滚动、关闭按钮逻辑与桌面端完全一致 (同一套规则, 见 #popup)。 */
-  @media (max-width:640px){
-    #popup{left:12px;right:12px;transform:none;width:auto;max-width:none}
-    #popup.hasPhoto{width:auto}
-  }
+  /* 弹窗没有任何按屏幕宽度分叉的规则 (per the owner: 电脑和手机端
+     一模一样的逻辑): 上面 #popup 的单套规则在所有宽度下同理运行 —
+     min(94vw,620px) 让卡片在手机上自然近全宽、在电脑上自然居中。 */
   .hotLabel{flex:none;align-self:center;background:#e07a1f;color:#fff;font-size:12px;font-weight:800;border-radius:999px;padding:6px 10px;box-shadow:0 3px 10px rgba(20,60,35,.18)}
   .hotLabel.team{background:#173d28}
   .chip.hot{background:rgba(255,244,230,.96);border-color:rgba(224,122,31,.5);color:#9a4d0d}
@@ -2937,11 +2939,13 @@ el.addEventListener('touchmove',function(e){ e.preventDefault(); },{passive:fals
 /* picking — popup shows ONLY the point name */
 var ray=new THREE.Raycaster(), mouseV=new THREE.Vector2();
 var popup=document.getElementById('popup'), popupName=document.getElementById('popupName');
-/* The popup card itself is viewport-fixed (same on phone and desktop —
-   see the #popup CSS); popupAnchor only drives the 3D leader line and
-   ground ring that mark WHICH point the card describes, re-aimed every
-   frame as the view orbits / zooms, so the selected point is always
-   unmistakable even though the card no longer floats over it. */
+/* The popup card itself docks at the bottom of the viewport (same on
+   phone and desktop — see the #popup CSS); popupAnchor drives the 3D
+   tie-ins that mark WHICH point the card describes — the 名牌 name
+   tag over the point's head, the leader line and the ground ring —
+   re-aimed every frame as the view orbits / zooms, and every selection
+   first flies the camera so the point sits in the open area above
+   the card (see flyCamTo / framedTarget). */
 var popupAnchor=null;
 function anchorLift(name){
   if(!name) return 6.2;
@@ -2963,6 +2967,40 @@ var pickLine=new THREE.Line(pickLineGeo,new THREE.LineBasicMaterial({color:0xffb
 pickLine.visible=false; pickLine.frustumCulled=false; pickLine.renderOrder=55; scene.add(pickLine);
 var pickRing=new THREE.Mesh(new THREE.RingGeometry(1.35,1.75,32),new THREE.MeshBasicMaterial({color:0xffb52e,transparent:true,opacity:0.9,side:THREE.DoubleSide,depthTest:false}));
 pickRing.rotation.x=-Math.PI/2; pickRing.visible=false; pickRing.renderOrder=54; scene.add(pickRing);
+/* 选中名牌 (per the owner): the bottom-docked card alone left visitors
+   unsure WHICH tent it described, so the selected point now wears a
+   3D name tag over its head — a billboard sprite (always facing the
+   camera) carrying the point's FULL display name, the exact same
+   string as the card's title, with a little tail dropping to the head
+   of the leader line. Only ONE tag exists: it is retextured on every
+   selection, follows its point in placePopup(), and hides with the
+   popup. Dark green pill + amber rim, so it reads as part of the
+   amber leader-line / ring set, distinct from the 全部标注 tags. */
+var pickTag=new THREE.Sprite(new THREE.SpriteMaterial({transparent:true,depthTest:false}));
+pickTag.visible=false; pickTag.renderOrder=61; pickTag.frustumCulled=false; scene.add(pickTag);
+function setPickTag(text){
+  var fs=46, pad=30;
+  var meas=document.createElement('canvas').getContext('2d');
+  meas.font='800 '+fs+'px "PingFang SC","Microsoft YaHei",sans-serif';
+  var cv=document.createElement('canvas');
+  cv.width=Math.ceil(meas.measureText(text).width+pad*2); cv.height=98;
+  var c2=cv.getContext('2d'), w=cv.width, r=35;
+  c2.beginPath(); // pill (same construction as the 标注 tags, bolder)
+  c2.moveTo(r,2); c2.lineTo(w-r,2); c2.arc(w-r,r,r-2,-Math.PI/2,Math.PI/2);
+  c2.lineTo(r,72); c2.arc(r,r,r-2,Math.PI/2,Math.PI*1.5); c2.closePath();
+  c2.fillStyle='#173d28'; c2.fill();
+  c2.lineWidth=3; c2.strokeStyle='#ffb52e'; c2.stroke();
+  c2.beginPath(); // pointer tail: pill bottom → down toward the leader line's head
+  c2.moveTo(w/2-13,68); c2.lineTo(w/2+13,68); c2.lineTo(w/2,94); c2.closePath();
+  c2.fillStyle='#173d28'; c2.fill();
+  c2.font='800 '+fs+'px "PingFang SC","Microsoft YaHei",sans-serif';
+  c2.fillStyle='#ffffff'; c2.textAlign='center'; c2.textBaseline='middle';
+  c2.fillText(text,w/2,39);
+  var tex=new THREE.CanvasTexture(cv); tex.colorSpace=THREE.SRGBColorSpace;
+  if(pickTag.material.map) pickTag.material.map.dispose();
+  pickTag.material.map=tex; pickTag.material.needsUpdate=true;
+  var H=3.15; pickTag.scale.set(H*w/cv.height,H,1); // a touch larger than the 标注 tags: this is THE selected point, it must read at a glance
+}
 function placePopup(){
   if(!popupAnchor) return;
   var p=new THREE.Vector3(); popupAnchor.getWorldPosition(p);
@@ -2971,10 +3009,11 @@ function placePopup(){
   lp[3]=p.x; lp[4]=Math.max(p.y+0.35,0.58); lp[5]=p.z;
   pickLineGeo.attributes.position.needsUpdate=true;
   pickRing.position.set(p.x,Math.max(p.y+0.07,0.56),p.z);
+  pickTag.position.set(p.x,p.y+anchorLift(popupAnchor.userData.poi)+1.55,p.z); // the 名牌 rides at the head of the leader line, its tail tip just touching the line's top, so tag → line → point reads as one pointer
   // 统一逻辑 (per the owner): phone and desktop behave identically —
-  // the card is viewport-fixed by CSS and NEVER follows the 3D view,
-  // so it can never ride off-screen or be covered, whatever point is
-  // selected. Only the leader line / ground ring (updated above) keep
+  // the card is bottom-docked by CSS and NEVER follows the 3D view,
+  // so it can never ride off-screen or cover the point it describes.
+  // Only the 名牌 / leader line / ground ring (updated above) keep
   // tracking the point. Any stale inline position from an older build
   // is cleared so the stylesheet rule owns the placement.
   popup.style.opacity='1'; popup.style.display=''; popup.style.left=''; popup.style.top=''; popup.style.transform='';
@@ -3092,19 +3131,40 @@ function renderBook(b){
   h+='</div>';
   popupBookEl.innerHTML=h; popupBookEl.style.display='';
 }
+/* 完整显示名 (per the owner): numbered tents register under short
+   codes (山野屋脊05), but a visitor reads the full formal name —
+   山野屋脊小天幕 05号. The card title AND the 3D 名牌 both render
+   this one resolved string, so they can never disagree about which
+   point is selected; every lookup （照片 / 介绍 / 预订卡） keeps using
+   the raw registered name, so nothing else changes. */
+function poiDisplayName(name){
+  if(!name) return name;
+  var m;
+  if((m=/^山野屋脊(\d+)$/.exec(name))) return '山野屋脊小天幕 '+m[1]+'号';
+  if((m=/^穹顶(\d+)$/.exec(name))) return '四角穹顶天幕 '+m[1]+'号';
+  if((m=/^灯笼帐(\d+)$/.exec(name))) return '四角穹顶灯笼帐 '+m[1]+'号';
+  if((m=/^莲花天幕(\d+)$/.exec(name))) return '喜马拉雅莲花天幕 '+m[1]+'号';
+  if((m=/^印第安(\d+)$/.exec(name))) return '印第安草帽大营帐 '+m[1]+'号';
+  if((m=/^万重山(\d+)$/.exec(name))) return '喜马拉雅万重山天幕 '+m[1]+'号';
+  if(name==='两重山') return '喜马拉雅两重山天幕';
+  return name;
+}
 function showPopup(name,obj){
-  popupName.textContent=name;
+  var disp=poiDisplayName(name); // ONE string for the card title and the 3D 名牌 alike
+  popupName.textContent=disp;
   var ph=poiPhoto(name); // 标题 → 照片 → 讲解: photo rides above the text when this point has one
-  if(ph){ popupImg.src=ph; popupImg.alt=name+'实拍照片'; popupImg.style.display='block'; popup.classList.add('hasPhoto'); }
+  if(ph){ popupImg.src=ph; popupImg.alt=disp+'实拍照片'; popupImg.style.display='block'; popup.classList.add('hasPhoto'); }
   else { popupImg.removeAttribute('src'); popupImg.alt=''; popupImg.style.display='none'; popup.classList.remove('hasPhoto'); }
   var info=poiInfo(name);
   popupDesc.textContent=info?info.d:''; popupDesc.style.display=info&&info.d?'':'none';
   popupMeta.textContent=info&&info.m?info.m:''; popupMeta.style.display=info&&info.m?'':'none';
   renderBook(poiBook(name));
   document.getElementById('popupPkgBtn').style.display=(name==='营地入口'||name==='营地出入口')?'':'none'; // the 套餐介绍 entry lives in the entrance popup (which is up from the first frame)
-  popupAnchor=obj||null; popup.classList.add('show'); pickLine.visible=!!obj; pickRing.visible=!!obj; placePopup();
+  popupAnchor=obj||null; popup.classList.add('show'); pickLine.visible=!!obj; pickRing.visible=!!obj;
+  if(obj){ setPickTag(disp); pickTag.visible=true; } else pickTag.visible=false; // the 名牌 appears / switches / vanishes with the selection
+  placePopup();
 }
-document.getElementById('popupClose').addEventListener('click',function(){ popup.classList.remove('show'); popupAnchor=null; pickLine.visible=false; pickRing.visible=false; });
+document.getElementById('popupClose').addEventListener('click',function(){ popup.classList.remove('show'); popupAnchor=null; pickLine.visible=false; pickRing.visible=false; pickTag.visible=false; });
 function pick(cx,cy){
   mouseV.x=(cx/window.innerWidth)*2-1; mouseV.y=-(cy/window.innerHeight)*2+1;
   ray.setFromCamera(mouseV,camera);
@@ -3112,7 +3172,7 @@ function pick(cx,cy){
   for(var i=0;i<hits.length;i++){
     var o=hits[i].object, root=null;
     while(o){ if(o.userData && o.userData.poi){ root=o; break; } o=o.parent; }
-    if(root){ showPopup(root.userData.poi,root); return; }
+    if(root){ showPopup(root.userData.poi,root); flyCamTo(root); return; } // a direct 3D tap selects exactly like a chip does: card + 名牌 + the same framed flight (flyCamTo is declared below — function hoisting covers the call)
   }
 }
 
@@ -3121,26 +3181,53 @@ function pick(cx,cy){
    chips; tapping one expands a second row with just that category's
    points, so the bar stays short and uncluttered on a phone. Tapping a
    point flies the view to it and pops its name (with the leader line). */
+/* 底部卡片占位 (per the owner): the popup docks at the BOTTOM of the
+   screen now, so a selection flight must frame its point in the OPEN
+   AREA ABOVE the card, not at screen centre — the orbit target is
+   shifted along the camera's own up axis by the card's share of the
+   viewport. That share is MEASURED from the card's real on-screen
+   height at selection time (card height + its 60px perch above the
+   tab bar), so the same rule holds on every screen — no width fork.
+   The camera-up vector for the flight's final pose has a closed form
+   in the orbit angles: up = (−cosφ·sinθ, sinφ, −cosφ·cosθ). */
+function framedTarget(px,pz,theta,phi,r){
+  var occ=0.30;
+  if(popup.classList.contains('show')){
+    occ=(popup.offsetHeight+66)/Math.max(1,window.innerHeight);
+    if(popup.classList.contains('hasPhoto')) occ=Math.max(occ,0.48); // a photo still streaming in only grows the card toward its 52dvh cap — plan for the tall card so the point never ends up behind it
+    occ=Math.max(0.16,Math.min(0.58,occ));
+  }
+  var dy=(occ-0.04)*r*Math.tan(THREE.MathUtils.degToRad(camera.fov/2));
+  var cf=Math.cos(phi);
+  return new THREE.Vector3(px+cf*Math.sin(theta)*dy, -Math.sin(phi)*dy, pz+cf*Math.cos(theta)*dy);
+}
+/* ONE flight for every selection path (3D tap, 导览 chips, 热门推荐,
+   搜索, 营地服务, and the entrance auto-popup): the camera GLIDES to
+   the point over ≈1.15 s on the shared camAnim ease — target,
+   distance and tilt all interpolate — ending with the point framed
+   above the bottom card (see framedTarget), close enough to read the
+   point itself (r capped at 110, nearer views kept). The popup opens
+   at once in its docked spot while the 名牌 / leader line track the
+   point the whole way. A visitor drag / wheel / button cancels the
+   flight instantly (see the pointer handlers). */
+function flyCamTo(obj){
+  var p=new THREE.Vector3(); obj.getWorldPosition(p);
+  setAuto(false);
+  var theta=view.theta, phi=Math.min(view.phi,1.02), r=Math.min(view.r,110);
+  camAnim={t:0,dur:1.15,
+    from:{theta:view.theta,phi:view.phi,r:view.r,target:view.target.clone()},
+    to:{theta:theta,phi:phi,r:r,target:framedTarget(p.x,p.z,theta,phi,r)}};
+}
 function flyToPoi(name,disp){
   showTab('map'); // 游玩导览页点任意点位: switch back to the 沙盘 page first, then the flight + popup play there
-  /* SMOOTH flight (客户体验优化): the camera now GLIDES to the point over
-     ≈1.15 s on the shared camAnim ease instead of snapping — target,
-     distance and tilt all interpolate, and the 介绍 popup opens at once
-     in its fixed viewport spot while the leader line tracks the point
-     the whole way. A visitor drag / wheel / button
-     cancels the flight instantly (see the pointer handlers). */
   var found=null;
   for(var i=0;i<poiList.length;i++) if(poiList[i].name===name){ found=poiList[i]; break; }
   if(!found && (name==='P1专属停车场'||name==='P2备用停车场'||name==='P3备用停车场')){
     found={obj:(name==='P1专属停车场'?p1:(name==='P2备用停车场'?p2:p3))};
   }
   if(found && found.obj){
-    var p=new THREE.Vector3(); found.obj.getWorldPosition(p);
-    setAuto(false);
-    camAnim={t:0,dur:1.15,
-      from:{theta:view.theta,phi:view.phi,r:view.r,target:view.target.clone()},
-      to:{theta:view.theta,phi:Math.min(view.phi,1.02),r:Math.min(view.r,110),target:new THREE.Vector3(p.x,0,p.z)}};
-    showPopup(disp||name,found.obj);
+    showPopup(disp||name,found.obj); // popup first, so framedTarget can measure the real card height
+    flyCamTo(found.obj);
   }
   else showPopup(disp||name,null);
 }
@@ -3968,8 +4055,10 @@ function animate(){
 animate();
 /* 开场唯一弹窗 (per the owner): 进页面只自动弹出「营地入口」一个弹窗
    (温馨提示: 入营报预订人手机尾号, 现场管家将带您前往预订的专属
-   天幕), 其他任何点位都不自动弹; 标注默认全关 (见 labelsHidden)。 */
-for(var epi=0;epi<poiList.length;epi++){ if(poiList[epi].name==='营地入口'){ showPopup('营地入口',poiList[epi].obj); break; } }
+   天幕), 其他任何点位都不自动弹; 标注默认全关 (见 labelsHidden)。
+   它走与任何一次点选完全相同的逻辑: 卡片贴底、入口上方挂名牌、
+   镜头从开场全景平滑飞向入口并把入口框在卡片上方的可视区。 */
+for(var epi=0;epi<poiList.length;epi++){ if(poiList[epi].name==='营地入口'){ showPopup('营地入口',poiList[epi].obj); flyCamTo(poiList[epi].obj); break; } }
 /* lazy batches: the camp is already rendered and interactive above —
    the living layer now streams in behind it (traffic + day life first,
    then night crowds + activity people + animals) */
