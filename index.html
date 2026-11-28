@@ -130,9 +130,18 @@
   .mealGrid figure{margin:0;min-width:0}
   .mealGrid img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;border-radius:10px}
   .mealGrid figcaption{font-size:12px;color:#5a7263;font-weight:700;margin:5px 2px 0}
-  #popup{position:absolute;left:50%;top:118px;transform:translate(-50%,-118%);z-index:12;background:#173d28;color:#fff;border-radius:14px;padding:12px 16px 62px;box-shadow:0 14px 34px rgba(10,40,22,.35);display:none;flex-direction:column;gap:5px;width:max-content;max-width:min(92vw,400px);transition:opacity .15s}
+  /* 弹窗卡片 (统一逻辑, per the owner): ONE behaviour on phone and
+     desktop alike — the card is NOT anchored to its 3D point any more.
+     It is a viewport-fixed card: horizontally centred, top clear of
+     the logo / 晴天·夜晚 bar, height capped so the whole card always
+     stays on screen, the title row stays put, the middle content
+     scrolls inside the card, and the 关闭 capsule (absolute,
+     bottom-right of the card) never scrolls away. Only the 3D leader
+     line + ground ring still point at the selected POI. Desktop keeps
+     a slightly wider card (420px) than the phone's full-width one. */
+  #popup{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 88px);transform:translateX(-50%);z-index:12;background:#173d28;color:#fff;border-radius:14px;padding:12px 16px 62px;box-shadow:0 14px 34px rgba(10,40,22,.35);display:none;flex-direction:column;gap:5px;width:min(92vw,420px);max-width:420px;max-height:80vh;max-height:min(80dvh,calc(100dvh - 176px));transition:opacity .15s}
   #popup.show{display:flex}
-  #popup .popHead{display:flex;align-items:center;gap:10px}
+  #popup .popHead{display:flex;align-items:center;gap:10px;flex:none}
   #popup .dot{width:10px;height:10px;border-radius:50%;background:#ffcf5c;flex:none}
   #popupName{font-size:17px;font-weight:800;letter-spacing:.03em;white-space:nowrap;margin-right:auto}
   /* 关闭按钮 (per the owner): moved OUT of the header to the card's
@@ -150,25 +159,18 @@
      讲解 text, full card width, natural aspect ratio — NEVER cropped
      (no object-fit, no fixed height). Points without a photo keep the
      plain text popup; no placeholder is ever shown. */
-  #popup.hasPhoto{width:min(92vw,400px)}
+  #popup.hasPhoto{width:min(92vw,420px)}
   #popupImg{display:none;width:100%;height:auto;border-radius:10px}
-  /* .popScroll wraps everything under the title row. On desktop it is
-     display:contents, so the card lays out exactly as before. On phones
-     it becomes the card's inner scroll area (see the media query). */
-  .popScroll{display:contents}
-  /* 手机端弹窗 (per the owner, with a phone screenshot as proof): the
-     anchor-following card used to ride up off the top of the screen on
-     phones — title cut off, no way to drag it back. On small screens
-     the card therefore detaches from its 3D anchor and becomes a
-     viewport-fixed card: centred with 12px side margins, top clear of
-     the logo / 晴天·夜晚 bar, height capped so the whole card stays on
-     screen, the middle content scrolls inside while the title row
-     stays put, and the 关闭 capsule (absolute, bottom-right of the
-     card) never scrolls away. Desktop keeps the anchored card. */
+  /* .popScroll wraps everything under the title row and is the card's
+     inner scroll area on EVERY screen size (unified logic): when the
+     card hits its max-height, the photo / 讲解 / 预订卡 scroll inside
+     while the title row above and the 关闭 capsule below stay put. */
+  .popScroll{display:flex;flex-direction:column;gap:5px;flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  /* 手机端只改卡片的横向占位: 左右各留 12px 边距撑满屏宽; 定位、限高、
+     内部滚动、关闭按钮逻辑与桌面端完全一致 (同一套规则, 见 #popup)。 */
   @media (max-width:640px){
-    #popup{position:fixed;left:12px;right:12px;top:calc(env(safe-area-inset-top,0px) + 88px);transform:none;width:auto;max-width:none;max-height:80vh;max-height:min(80dvh,calc(100dvh - 176px))}
+    #popup{left:12px;right:12px;transform:none;width:auto;max-width:none}
     #popup.hasPhoto{width:auto}
-    #popup .popScroll{display:flex;flex-direction:column;gap:5px;flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
   }
   .hotLabel{flex:none;align-self:center;background:#e07a1f;color:#fff;font-size:12px;font-weight:800;border-radius:999px;padding:6px 10px;box-shadow:0 3px 10px rgba(20,60,35,.18)}
   .hotLabel.team{background:#173d28}
@@ -2935,10 +2937,11 @@ el.addEventListener('touchmove',function(e){ e.preventDefault(); },{passive:fals
 /* picking — popup shows ONLY the point name */
 var ray=new THREE.Raycaster(), mouseV=new THREE.Vector2();
 var popup=document.getElementById('popup'), popupName=document.getElementById('popupName');
-/* The name popup is ANCHORED to the clicked object: it pops up directly
-   above that point in the 3D view (e.g. tapping 万重山01 shows 「万重山01」
-   floating right over that canopy) and follows the object as the view
-   orbits / zooms, so the selected point is always unmistakable. */
+/* The popup card itself is viewport-fixed (same on phone and desktop —
+   see the #popup CSS); popupAnchor only drives the 3D leader line and
+   ground ring that mark WHICH point the card describes, re-aimed every
+   frame as the view orbits / zooms, so the selected point is always
+   unmistakable even though the card no longer floats over it. */
 var popupAnchor=null;
 function anchorLift(name){
   if(!name) return 6.2;
@@ -2963,21 +2966,18 @@ pickRing.rotation.x=-Math.PI/2; pickRing.visible=false; pickRing.renderOrder=54;
 function placePopup(){
   if(!popupAnchor) return;
   var p=new THREE.Vector3(); popupAnchor.getWorldPosition(p);
-  var lp=pickLineGeo.attributes.position.array; // leader: name-tag point → the object at ground level
+  var lp=pickLineGeo.attributes.position.array; // leader: a point above the object → the object at ground level
   lp[0]=p.x; lp[1]=p.y+anchorLift(popupAnchor.userData.poi); lp[2]=p.z;
   lp[3]=p.x; lp[4]=Math.max(p.y+0.35,0.58); lp[5]=p.z;
   pickLineGeo.attributes.position.needsUpdate=true;
   pickRing.position.set(p.x,Math.max(p.y+0.07,0.56),p.z);
-  if(window.innerWidth<=640){ popup.style.opacity='1'; popup.style.display=''; popup.style.left=''; popup.style.top=''; return; } // 手机端: the card is viewport-fixed by CSS (see the ≤640px media query) — only the leader line / ground ring keep following the point, the card itself stays fully on screen
-  p.y+=anchorLift(popupAnchor.userData.poi);
-  var v=p.project(camera);
-  if(v.z>1||v.z<-1){ popup.style.opacity='0'; popup.style.display='none'; return; } // anchor off-view (e.g. behind the follow camera in roam): take the popup fully out of layout — an opacity-0 pill would otherwise sit invisible yet still swallow taps, and its 关闭 button could never be reached
-  popup.style.opacity='1'; popup.style.display='';
-  var x=(v.x*0.5+0.5)*window.innerWidth, y=(-v.y*0.5+0.5)*window.innerHeight;
-  var hw=Math.min(window.innerWidth/2-6,(popup.offsetWidth||320)/2+6); // the 介绍 card is wider than the old name pill — clamp by its real half-width so it never spills off a phone screen
-  x=Math.max(hw,Math.min(window.innerWidth-hw,x));
-  y=Math.max(70,Math.min(window.innerHeight-170,y));
-  popup.style.left=x+'px'; popup.style.top=y+'px';
+  // 统一逻辑 (per the owner): phone and desktop behave identically —
+  // the card is viewport-fixed by CSS and NEVER follows the 3D view,
+  // so it can never ride off-screen or be covered, whatever point is
+  // selected. Only the leader line / ground ring (updated above) keep
+  // tracking the point. Any stale inline position from an older build
+  // is cleared so the stylesheet rule owns the placement.
+  popup.style.opacity='1'; popup.style.display=''; popup.style.left=''; popup.style.top=''; popup.style.transform='';
 }
 /* — 点位介绍 (弹窗升级): every point gets a one-line 卖点 and, where the
    camp's real 业态 gives one, a key-info line. Tent types additionally
@@ -3126,7 +3126,8 @@ function flyToPoi(name,disp){
   /* SMOOTH flight (客户体验优化): the camera now GLIDES to the point over
      ≈1.15 s on the shared camAnim ease instead of snapping — target,
      distance and tilt all interpolate, and the 介绍 popup opens at once
-     and rides its anchor the whole way. A visitor drag / wheel / button
+     in its fixed viewport spot while the leader line tracks the point
+     the whole way. A visitor drag / wheel / button
      cancels the flight instantly (see the pointer handlers). */
   var found=null;
   for(var i=0;i<poiList.length;i++) if(poiList[i].name===name){ found=poiList[i]; break; }
@@ -3960,7 +3961,7 @@ function animate(){
   stepModeTween(dt); // 场景切换交叉渐变 — sky / fog / lights ease toward the target mode over ≈1.2 s
   applyNightLevel(); // night lights follow nightLevel on their stagger (runs after the flicker / movie / fireworks writers, so their per-frame values get scaled, not fought)
   if(labelSprites.length){ for(var lsi=0;lsi<labelSprites.length;lsi++){ var lsp=labelSprites[lsi]; lsp.visible=!labelsHidden&&(labelsAllOn||(lsp.userData.tier===1?view.r<205:view.r<125)); } } // progressive labels (界面减负): zoomed out = dots only, mid-range = big landmarks, close-up = the rest fade in; 全部标注 overrides at any distance; 关闭标注 (labelsHidden) overrides EVERYTHING — no name tag at any zoom until the visitor turns labels back on
-  if(popupAnchor && popup.classList.contains('show')) placePopup(); // keep the name tag glued above its point while the view moves
+  if(popupAnchor && popup.classList.contains('show')) placePopup(); // keep the leader line / ground ring aimed at the selected point while the view moves (the card itself is viewport-fixed and does not move)
   if(pickRing.visible){ var prp=(clock.elapsedTime%1.5)/1.5, prs=0.8+prp*0.55; pickRing.scale.set(prs,prs,1); pickRing.material.opacity=0.95-0.62*prp; } // the ground ring PULSES on the selected point (per the owner: 下面一个圆圈跳跳跳的指引) for as long as its popup is up
   if(currentTab==='map') renderer.render(scene,camera); // the 3D view only renders while the 沙盘 tab is up — the other three pages are plain content pages over a paused canvas
 }
