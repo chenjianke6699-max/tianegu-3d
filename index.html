@@ -3187,15 +3187,25 @@ function pick(cx,cy){
    shifted along the camera's own up axis by the card's share of the
    viewport. That share is MEASURED from the card's real on-screen
    height at selection time (card height + its 60px perch above the
-   tab bar), so the same rule holds on every screen — no width fork.
+   tab bar) — except photo cards, whose photo loads AFTER the
+   measurement and grows the card to its 52dvh cap, so those plan
+   for the cap share instead (see framedTarget). Same rule on every
+   screen — no width fork.
    The camera-up vector for the flight's final pose has a closed form
    in the orbit angles: up = (−cosφ·sinθ, sinφ, −cosφ·cosθ). */
 function framedTarget(px,pz,theta,phi,r){
   var occ=0.30;
   if(popup.classList.contains('show')){
     occ=(popup.offsetHeight+66)/Math.max(1,window.innerHeight);
-    if(popup.classList.contains('hasPhoto')) occ=Math.max(occ,0.48); // a photo still streaming in only grows the card toward its 52dvh cap — plan for the tall card so the point never ends up behind it
-    occ=Math.max(0.16,Math.min(0.58,occ));
+    if(popup.classList.contains('hasPhoto')){
+      /* 照片在点选之后才开始加载: 测量这一刻卡片还矮, 照片到位后
+         卡片会长到 CSS 上限 (max-height 52dvh)。矮屏 / 带浏览器
+         边框的 webview 里, 按矮卡规划的落点会被长高的卡片吃掉,
+         名牌只剩一条边露在卡片顶沿外 — 直接按上限规划取景,
+         名牌与点位本体永远落在卡片顶沿之上。 */
+      occ=Math.max(occ, 0.52+66/Math.max(1,window.innerHeight));
+    }
+    occ=Math.max(0.16,Math.min(0.70,occ));
   }
   var dy=(occ-0.04)*r*Math.tan(THREE.MathUtils.degToRad(camera.fov/2));
   var cf=Math.cos(phi);
@@ -3286,19 +3296,42 @@ document.getElementById('seasonClose').addEventListener('click',function(){ docu
   if(!input||!box) return;
   var ALIAS={'浆板戏水':'溪流桨板','高尔夫':'草坪高尔夫','室内淘气堡':'室内波波池','松兔乐园':'萌宠互动'};
   var entries=[], seen={};
-  function add(poi,disp){ var k=poi+'|'+disp; if(seen[k]) return; seen[k]=1; entries.push({poi:poi,disp:disp}); }
-  for(var i=0;i<poiList.length;i++) add(poiList[i].name, ALIAS[poiList[i].name]||poiList[i].name);
+  function norm(s){ return (s||'').replace(/\s+/g,''); }
+  /* 搜索索引 (per the owner): 客人按帐篷的完整显示名搜 (山野屋脊
+     小天幕 05号) 或按简称搜 (小天幕 / 穹顶), 之前只索引注册短码
+     (山野屋脊05) 于是搜不到。每条索引把 注册名 + 显示名 (与卡片
+     标题、名牌同一串, poiDisplayName) + 常用简称 一起收进 keys
+     (去空格后匹配, 客人带不带空格都行); 结果按钮显示正式全名,
+     点选仍传原来的 disp 给 flyToPoi — 飞达 + 名牌 + 底部卡片与
+     任何一次点选完全一致, 介绍 / 预订卡的查表口径一点不变。 */
+  function add(poi,disp,label,extra){
+    var k=poi+'|'+disp; if(seen[k]) return; seen[k]=1;
+    entries.push({poi:poi,disp:disp,label:label||disp,
+      keys:norm(poi+' '+disp+' '+(label||'')+' '+poiDisplayName(poi)+' '+(extra||''))});
+  }
+  for(var i=0;i<poiList.length;i++){
+    var raw=poiList[i].name, ad=ALIAS[raw]||null;
+    var extra='';
+    if(raw.indexOf('山野屋脊')===0) extra='小天幕';
+    else if(raw.indexOf('穹顶')===0) extra='穹顶帐篷';
+    add(raw, ad||raw, ad||poiDisplayName(raw), extra);
+  }
   add('P1专属停车场','停车场 · P1专属停车场'); add('P2备用停车场','停车场 · P2备用停车场'); add('P3备用停车场','停车场 · P3备用停车场');
   add('营地入口','营地出入口');
   function hide(){ box.classList.remove('show'); box.innerHTML=''; }
   input.addEventListener('input',function(){
-    var q=input.value.replace(/\s+/g,'');
+    var q=norm(input.value);
     if(!q){ hide(); return; }
-    var hits=entries.filter(function(e){ return e.disp.indexOf(q)>=0 || e.poi.indexOf(q)>=0; }).slice(0,8);
+    var hits=entries.filter(function(e){ return e.keys.indexOf(q)>=0; });
+    hits.sort(function(a,b){ // 完整显示名精确命中 / 以查询开头的排最前 (如 05号 直达 05号, 不被同类帐篷挤出 8 条上限)
+      function rank(e){ var l=norm(e.label); return l===q?0:(l.indexOf(q)===0?1:2); }
+      return rank(a)-rank(b);
+    });
+    hits=hits.slice(0,8);
     box.innerHTML='';
     if(!hits.length){ var d=document.createElement('div'); d.className='srEmpty'; d.textContent='没有找到这个点位，换个名称试试'; box.appendChild(d); }
     hits.forEach(function(e){
-      var b=document.createElement('button'); b.type='button'; b.className='srItem'; b.textContent=e.disp;
+      var b=document.createElement('button'); b.type='button'; b.className='srItem'; b.textContent=e.label;
       b.addEventListener('click',function(){ hide(); input.value=''; input.blur(); closeSub(); flyToPoi(e.poi,e.disp); });
       box.appendChild(b);
     });
@@ -4013,7 +4046,7 @@ window.addEventListener('resize',function(){
 var clock=new THREE.Clock();
 function animate(){
   requestAnimationFrame(animate);
-  var dt=Math.min(clock.getDelta(),0.05);
+  var dt=Math.min(clock.getDelta(),0.2); // 飞达等动画按真实时间推进: 低帧率环境 (软件渲染 / 弱机) 下 0.05 的钳制会把 1.15s 飞达拖成数秒, 期间名牌一直被底部卡片挡住; 60fps 设备 dt≈0.016, 不受影响
   if(camAnim){ // boot-intro hand-off: ease the camera from the top view down into the home angle
     camAnim.t+=dt; var cu=Math.min(1,camAnim.t/camAnim.dur), ce=cu<0.5?2*cu*cu:1-Math.pow(-2*cu+2,2)/2;
     view.theta=camAnim.from.theta+(camAnim.to.theta-camAnim.from.theta)*ce;
